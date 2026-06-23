@@ -7,6 +7,7 @@ from app.dependencies.services import get_node_service
 from app.schemas.requests.node import (
     CreateNodeRequest,
     MoveNodeRequest,
+    ReorderNodesRequest,
     UpdateNodeRequest,
 )
 from app.schemas.responses.node import NodeDetailResponse, NodeTreeResponse
@@ -43,6 +44,15 @@ async def create_node(
     """Create a section or leaf node."""
     node = await service.create_node(**body.model_dump())
     return NodeDetailResponse.model_validate(node)
+
+
+@router.put("/reorder", status_code=status.HTTP_204_NO_CONTENT)
+async def reorder_nodes(
+    body: ReorderNodesRequest,
+    service: NodeService = Depends(get_node_service),
+) -> None:
+    """Reorder siblings under a parent and optionally move nodes into it."""
+    await service.reorder_nodes(**body.model_dump())
 
 
 @router.patch("/{node_id}", response_model=NodeDetailResponse)

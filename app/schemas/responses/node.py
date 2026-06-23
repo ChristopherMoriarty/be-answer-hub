@@ -2,13 +2,13 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class NodeDetailResponse(BaseModel):
     """Full node payload including markdown content."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = {"from_attributes": True}
 
     id: uuid.UUID
     parent_id: uuid.UUID | None

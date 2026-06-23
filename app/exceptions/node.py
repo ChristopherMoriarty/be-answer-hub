@@ -15,3 +15,7 @@ class NodeHasContentError(ConflictServiceError):
 
 class InvalidNodeMoveError(ConflictServiceError):
     """Node cannot be moved to the requested parent."""
+
+
+class InvalidReorderError(ConflictServiceError):
+    """Reorder payload is invalid."""
