@@ -185,6 +185,78 @@ class TestNodesUpdate:
         assert get_response.status_code == status.HTTP_200_OK
 
 
+class TestNodesReorder:
+    async def test_reorder_root_siblings(self, client, async_db_session):
+        backend = NodeFactory(title="Backend", sort_order=0)
+        frontend = NodeFactory(title="Frontend", sort_order=1)
+        async_db_session.add_all([backend, frontend])
+        await async_db_session.commit()
+
+        response = await client.put(
+            f"{NODES_URL}/reorder",
+            json={
+                "parent_id": None,
+                "ordered_ids": [str(frontend.id), str(backend.id)],
+            },
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        tree_response = await client.get(f"{NODES_URL}/tree")
+        titles = [item["title"] for item in tree_response.json()["items"]]
+        assert titles == ["Frontend", "Backend"]
+
+    async def test_reorder_moves_node_into_parent(self, client, async_db_session):
+        backend = NodeFactory(title="Backend", sort_order=0)
+        frontend = NodeFactory(title="Frontend", sort_order=1)
+        async_db_session.add_all([backend, frontend])
+        await async_db_session.flush()
+
+        python = NodeFactory(title="Python", parent_id=backend.id, sort_order=0)
+        async_db_session.add(python)
+        await async_db_session.commit()
+
+        response = await client.put(
+            f"{NODES_URL}/reorder",
+            json={
+                "parent_id": str(frontend.id),
+                "ordered_ids": [str(python.id)],
+            },
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        tree_response = await client.get(f"{NODES_URL}/tree")
+        items = tree_response.json()["items"]
+        frontend_node = next(item for item in items if item["id"] == str(frontend.id))
+        assert [child["title"] for child in frontend_node["children"]] == ["Python"]
+
+    async def test_reorder_duplicate_ids(self, client, async_db_session):
+        backend = NodeFactory(title="Backend")
+        async_db_session.add(backend)
+        await async_db_session.commit()
+
+        response = await client.put(
+            f"{NODES_URL}/reorder",
+            json={"parent_id": None, "ordered_ids": [str(backend.id), str(backend.id)]},
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    async def test_reorder_move_into_descendant(self, client, async_db_session):
+        root_id, section_id, _ = await _seed_tree(async_db_session)
+
+        response = await client.put(
+            f"{NODES_URL}/reorder",
+            json={
+                "parent_id": str(section_id),
+                "ordered_ids": [str(root_id)],
+            },
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+
 class TestNodesMove:
     async def test_move_node_to_root(self, client, async_db_session):
         root_id, section_id, _ = await _seed_tree(async_db_session)

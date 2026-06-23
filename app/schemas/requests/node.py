@@ -28,3 +28,10 @@ class MoveNodeRequest(BaseModel):
 
     parent_id: uuid.UUID | None
     sort_order: Annotated[int | None, Field(default=None, ge=0)] = None
+
+
+class ReorderNodesRequest(BaseModel):
+    """Payload for reordering siblings and optionally moving nodes into a parent."""
+
+    parent_id: uuid.UUID | None
+    ordered_ids: Annotated[list[uuid.UUID], Field(min_length=1)]

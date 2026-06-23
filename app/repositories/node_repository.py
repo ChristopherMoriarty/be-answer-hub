@@ -25,6 +25,26 @@ class NodeRepository:
         result = await self._session.scalars(stmt)
         return list(result.all())
 
+    async def get_by_ids(self, node_ids: list[uuid.UUID]) -> list[Node]:
+        """Return nodes for the given primary keys."""
+        if not node_ids:
+            return []
+
+        stmt = select(Node).where(Node.id.in_(node_ids))
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
+    async def list_children(self, parent_id: uuid.UUID | None) -> list[Node]:
+        """Return direct children of a parent ordered for display."""
+        parent_filter = (
+            Node.parent_id.is_(None)
+            if parent_id is None
+            else Node.parent_id == parent_id
+        )
+        stmt = select(Node).where(parent_filter).order_by(Node.sort_order, Node.title)
+        result = await self._session.scalars(stmt)
+        return list(result.all())
+
     async def get_by_parent_and_title(
         self,
         parent_id: uuid.UUID | None,

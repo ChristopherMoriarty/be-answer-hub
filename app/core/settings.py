@@ -3,6 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+from pydantic.config import Extra
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +53,11 @@ class DatabaseSettings(BaseModel):
         """Async PostgreSQL database URL."""
         return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
+    @property
+    def sync_url(self) -> str:
+        """Sync PostgreSQL database URL for Alembic."""
+        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+
 
 class Settings(BaseSettings):
     """Application settings."""
@@ -65,7 +71,7 @@ class Settings(BaseSettings):
         env_nested_delimiter="__",
         env_prefix="",
         case_sensitive=False,
-        extra="ignore",
+        extra=Extra.ignore,
     )
 
 
