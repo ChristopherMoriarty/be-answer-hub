@@ -1,6 +1,8 @@
 import asyncio
 from collections.abc import AsyncGenerator, Generator
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -10,6 +12,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.session import db
 from app.main import app
 from tests.factories import FACTORIES
+
+
+@pytest.fixture(scope="session", autouse=True)
+def mock_minio_client() -> MagicMock:
+    """Avoid real MinIO connections during tests."""
+    mock = MagicMock()
+    mock.ensure_bucket = AsyncMock()
+    mock.put_object = AsyncMock()
+    mock.delete_object = AsyncMock()
+    mock.presigned_get_url = AsyncMock(return_value="https://example.com/cv/test.pdf")
+    mock.get_object = AsyncMock(return_value=b"%PDF-1.4 preview")
+
+    with patch("app.main.MinioClient", return_value=mock):
+        app.state.minio_client = mock
+        yield mock
+
+
+@pytest.fixture(autouse=True)
+def reset_minio_mock(mock_minio_client: MagicMock) -> None:
+    """Reset MinIO mock call history between tests."""
+    mock_minio_client.reset_mock()
+    mock_minio_client.ensure_bucket = AsyncMock()
+    mock_minio_client.put_object = AsyncMock()
+    mock_minio_client.delete_object = AsyncMock()
+    mock_minio_client.presigned_get_url = AsyncMock(
+        return_value="https://example.com/cv/test.pdf"
+    )
+    mock_minio_client.get_object = AsyncMock(return_value=b"%PDF-1.4 preview")
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -43,6 +73,6 @@ async def clear_db(async_db_session: AsyncSession) -> AsyncGenerator[None, None]
     yield
 
     await async_db_session.execute(
-        text("TRUNCATE TABLE nodes RESTART IDENTITY CASCADE")
+        text("TRUNCATE TABLE cv, nodes RESTART IDENTITY CASCADE")
     )
     await async_db_session.commit()

@@ -15,10 +15,10 @@ BASE_DIR = Path(__file__).parent.parent
 class APISettings(BaseModel):
     """API configuration settings."""
 
-    title: str = "BE Answer Hub API"
-    description: str = "API for BE Answer Hub"
-    version: str = "0.0.1"
-    port: int = Field(default=8000, ge=1, le=65535)
+    title: str
+    description: str
+    version: str
+    port: int = Field(ge=1, le=65535)
 
 
 class LogLevel(str, Enum):
@@ -34,19 +34,19 @@ class LogLevel(str, Enum):
 class LoggerSettings(BaseModel):
     """Logger configuration settings."""
 
-    level: LogLevel = LogLevel.INFO
+    level: LogLevel
 
 
 class DatabaseSettings(BaseModel):
     """Database configuration settings."""
 
-    host: str = "localhost"
-    port: int = Field(default=5432, ge=1, le=65535)
-    user: str = "postgres"
-    password: str = "postgres"
-    name: str = "answer_hub"
-    pool_size: int = Field(default=20, gt=0)
-    max_overflow: int = Field(default=10, ge=0)
+    host: str
+    port: int = Field(ge=1, le=65535)
+    user: str
+    password: str
+    name: str
+    pool_size: int = Field(gt=0)
+    max_overflow: int = Field(ge=0)
 
     @property
     def url(self) -> str:
@@ -59,12 +59,24 @@ class DatabaseSettings(BaseModel):
         return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
 
+class S3Settings(BaseModel):
+    """S3-compatible object storage settings."""
+
+    endpoint_url: str
+    access_key: str
+    secret_key: str
+    bucket: str
+    region: str
+    presigned_ttl: int = Field(ge=60)
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
-    api: APISettings = APISettings()
-    logger: LoggerSettings = LoggerSettings()
-    database: DatabaseSettings = DatabaseSettings()
+    api: APISettings
+    logger: LoggerSettings
+    database: DatabaseSettings
+    s3: S3Settings
 
     model_config = SettingsConfigDict(
         env_file=(BASE_DIR / ".env"),
