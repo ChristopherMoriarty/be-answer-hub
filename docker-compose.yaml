@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${DATABASE__PASSWORD:-postgres}
       POSTGRES_DB: ${DATABASE__NAME:-answer_hub}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./.data/postgres:/var/lib/postgresql/data
     networks:
       - be-answer-hub-network
     healthcheck:
@@ -30,15 +30,38 @@ services:
       PYTHONPATH: /app/app/database/migrations:/app
     volumes:
       - ./app:/app/app
-      - ./run-migrations.sh:/app/run-migrations.sh:ro
+      - ./scripts/run-migrations.sh:/app/scripts/run-migrations.sh:ro
     working_dir: /app/app/database/migrations
-    command: ["sh", "/app/run-migrations.sh"]
+    command: ["sh", "/app/scripts/run-migrations.sh"]
     networks:
       - be-answer-hub-network
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
+
+  minio:
+    container_name: minio
+    build:
+      context: .
+      dockerfile: ./build/minio/Dockerfile
+    restart: always
+    ports:
+      - "${S3__PORT:-9000}:9000"
+      - "${S3__CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${S3__ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3__SECRET_KEY:-minioadmin}
+      S3__BUCKET: ${S3__BUCKET:-cv-files}
+    volumes:
+      - ./.data/minio:/data
+    networks:
+      - be-answer-hub-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   app:
     container_name: be-answer-hub
@@ -65,10 +88,8 @@ services:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
-
-volumes:
-  postgres_data:
-    driver: local
+      minio:
+        condition: service_healthy
 
 networks:
   be-answer-hub-network:

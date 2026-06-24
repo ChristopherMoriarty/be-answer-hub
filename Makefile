@@ -86,7 +86,7 @@ migrate:
 
 upgrade:
 	@echo "$(BLUE)Running Alembic upgrade to head in Docker...$(NC)"
-	docker compose run --rm --workdir /app/app/database/migrations migrations sh /app/run-migrations.sh
+	docker compose run --rm --workdir /app/app/database/migrations migrations sh /app/scripts/run-migrations.sh
 	@echo "$(GREEN)Database upgraded successfully!$(NC)"
 
 downgrade:

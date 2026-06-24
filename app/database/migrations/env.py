@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.core.settings import settings  # noqa: E402
 from app.models import Base  # noqa: E402
+import app.models.cv  # noqa: E402, F401
 import app.models.node  # noqa: E402, F401
 
 config = context.config

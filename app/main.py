@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from app.clients.minio import MinioClient
 from app.core.exceptions_handler import register_exception_handlers
 from app.core.logging import init_logger
 from app.core.settings import settings
@@ -17,10 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifespan events."""
     logger.info("Starting API server")
+
+    minio_client = MinioClient(settings.s3)
+    await minio_client.ensure_bucket()
+    app.state.minio_client = minio_client
+
     yield
+
     logger.info("Shutting down API server")
     await db.close()
 
