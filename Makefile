@@ -8,7 +8,7 @@ NC=\033[0m
 
 export TERM=xterm-256color
 
-.PHONY: setup-local setup-docker install run env pre-commit-install docker-up docker-logs tests-local tests-docker migrate upgrade downgrade lint format type-check help
+.PHONY: setup-local setup-docker install run env pre-commit-install docker-up docker-logs test-db-init tests-local tests-docker migrate upgrade downgrade lint format type-check help
 
 setup-local: install pre-commit-install env
 	@echo "$(GREEN)Local setup completed successfully!$(NC)"
@@ -54,7 +54,15 @@ docker-logs:
 	@echo "$(BLUE)Showing Docker logs...$(NC)"
 	docker compose logs -f
 
-tests-local:
+test-db-init:
+	@echo "$(BLUE)Ensuring test database exists and is migrated...$(NC)"
+	@docker compose exec postgres psql -U $${DATABASE__USER:-postgres} -tc \
+		"SELECT 1 FROM pg_database WHERE datname = 'answer_hub_test'" | grep -q 1 || \
+		docker compose exec postgres psql -U $${DATABASE__USER:-postgres} -c "CREATE DATABASE answer_hub_test;"
+	@docker compose run --rm -e DATABASE__NAME=answer_hub_test --workdir /app/app/database/migrations migrations sh /app/scripts/run-migrations.sh
+	@echo "$(GREEN)Test database ready.$(NC)"
+
+tests-local: test-db-init
 	@echo "$(BLUE)Running tests locally...$(NC)"
 	poetry run pytest -q
 
