@@ -135,8 +135,11 @@ async def ensure_missing_default_columns(
     repository: HiringRepository,
     board: HiringBoard,
 ) -> bool:
-    """Add default step columns to boards created before defaults existed."""
+    """Add default step columns to legacy boards that only had Applied."""
     existing_kinds = {column.step_kind for column in board.columns}
+    if "applied" not in existing_kinds:
+        return False
+
     missing = [
         kind for kind in DEFAULT_BOARD_COLUMN_KINDS if kind not in existing_kinds
     ]

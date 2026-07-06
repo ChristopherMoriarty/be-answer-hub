@@ -59,7 +59,10 @@ test-db-init:
 	@docker compose exec postgres psql -U $${DATABASE__USER:-postgres} -tc \
 		"SELECT 1 FROM pg_database WHERE datname = 'answer_hub_test'" | grep -q 1 || \
 		docker compose exec postgres psql -U $${DATABASE__USER:-postgres} -c "CREATE DATABASE answer_hub_test;"
-	@docker compose run --rm -e DATABASE__NAME=answer_hub_test --workdir /app/app/database/migrations migrations sh /app/scripts/run-migrations.sh
+	@docker compose run --rm \
+		-e DATABASE__HOST=postgres \
+		--workdir /app/app/database/migrations \
+		migrations sh /app/scripts/run-migrations.sh
 	@echo "$(GREEN)Test database ready.$(NC)"
 
 tests-local: test-db-init
