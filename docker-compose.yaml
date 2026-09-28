@@ -41,28 +41,31 @@ services:
         condition: service_healthy
     restart: "no"
 
-  minio:
-    container_name: minio
-    build:
-      context: .
-      dockerfile: ./build/minio/Dockerfile
+  rustfs:
+    container_name: rustfs
+    image: rustfs/rustfs:1.0.0
+    user: "0:0"
     restart: always
     ports:
       - "${S3__PORT:-9000}:9000"
       - "${S3__CONSOLE_PORT:-9001}:9001"
     environment:
-      MINIO_ROOT_USER: ${S3__ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${S3__SECRET_KEY:-minioadmin}
-      S3__BUCKET: ${S3__BUCKET:-cv-files}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: ${S3__ACCESS_KEY:-minioadmin}
+      RUSTFS_SECRET_KEY: ${S3__SECRET_KEY:-minioadmin}
     volumes:
-      - ./.data/minio:/data
+      - ./.data/rustfs:/data
     networks:
       - be-answer-hub-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 15s
 
   app:
     container_name: be-answer-hub
@@ -89,7 +92,7 @@ services:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
-      minio:
+      rustfs:
         condition: service_healthy
 
 networks:

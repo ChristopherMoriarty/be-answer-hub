@@ -1,14 +1,18 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
+from app.api.auth import router as auth_router
 from app.api.base import router as base_router
 from app.api.cv import router as cv_router
 from app.api.hiring import router as hiring_router
 from app.api.nodes import router as nodes_router
+from app.auth.users import current_active_user
 
 
 def init_routes(app_instance: "FastAPI") -> None:
     """Register all API routers in the FastAPI application."""
+    protected = [Depends(current_active_user)]
     app_instance.include_router(base_router)
-    app_instance.include_router(nodes_router)
-    app_instance.include_router(cv_router)
-    app_instance.include_router(hiring_router)
+    app_instance.include_router(auth_router)
+    app_instance.include_router(nodes_router, dependencies=protected)
+    app_instance.include_router(cv_router, dependencies=protected)
+    app_instance.include_router(hiring_router, dependencies=protected)

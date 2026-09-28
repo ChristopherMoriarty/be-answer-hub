@@ -21,7 +21,8 @@ def build_node_tree(nodes: list[Node]) -> list[NodeTreeItem]:
                 parent_id=node.parent_id,
                 title=node.title,
                 sort_order=node.sort_order,
-                has_content=node.content_md is not None,
+                has_content=node.has_content,
+                languages=[translation.language for translation in node.translations],
                 children=build_branch(node.id),
             )
             for node in children_by_parent[parent_id]

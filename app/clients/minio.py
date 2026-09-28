@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class MinioClient:
-    """Async S3-compatible client for MinIO and AWS S3."""
+    """Async S3 client. Compose runs RustFS; the same client talks to AWS S3."""
 
     def __init__(self, settings: S3Settings) -> None:
         self._settings = settings

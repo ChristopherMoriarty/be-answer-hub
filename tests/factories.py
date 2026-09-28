@@ -5,6 +5,7 @@ import factory
 from app.models.cv import Cv
 from app.models.hiring import HiringBoard, HiringBoardColumn, HiringProcess
 from app.models.node import Node
+from app.models.node_translation import NodeTranslation
 
 
 class NodeFactory(factory.alchemy.SQLAlchemyModelFactory):
@@ -13,11 +14,23 @@ class NodeFactory(factory.alchemy.SQLAlchemyModelFactory):
     id = factory.LazyFunction(uuid.uuid4)
     parent_id = None
     title = factory.Sequence(lambda n: f"Node {n}")
-    content_md = None
     sort_order = factory.Sequence(lambda n: n)
 
     class Meta:
         model = Node
+
+
+class NodeTranslationFactory(factory.alchemy.SQLAlchemyModelFactory):
+    """Factory for node answer translations."""
+
+    id = factory.LazyFunction(uuid.uuid4)
+    node = factory.SubFactory(NodeFactory)
+    node_id = factory.SelfAttribute("node.id")
+    language = "ua"
+    content_md = "# Answer"
+
+    class Meta:
+        model = NodeTranslation
 
 
 class CvFactory(factory.alchemy.SQLAlchemyModelFactory):
@@ -80,6 +93,7 @@ class HiringProcessFactory(factory.alchemy.SQLAlchemyModelFactory):
 
 FACTORIES = {
     NodeFactory,
+    NodeTranslationFactory,
     CvFactory,
     HiringBoardFactory,
     HiringBoardColumnFactory,

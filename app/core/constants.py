@@ -1,5 +1,14 @@
 API_PREFIX = "/api/v1"
 
+CONTENT_LANGUAGE_LABELS: dict[str, str] = {
+    "ua": "Ukrainian",
+    "en": "English",
+    "ru": "Russian",
+}
+
+ALLOWED_CONTENT_LANGUAGES = frozenset(CONTENT_LANGUAGE_LABELS)
+DEFAULT_CONTENT_LANGUAGE = "ua"
+
 STEP_KIND_LABELS: dict[str, str] = {
     "applied": "Applied",
     "hr_screen": "Screening",

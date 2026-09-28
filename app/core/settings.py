@@ -59,6 +59,14 @@ class DatabaseSettings(BaseModel):
         return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
 
+class AuthSettings(BaseModel):
+    """JWT settings. Accounts live in the database; there is no registration."""
+
+    jwt_secret: str = Field(min_length=16)
+    access_ttl_seconds: int = Field(default=900, gt=0)
+    refresh_ttl_seconds: int = Field(default=60 * 60 * 24 * 7, gt=0)
+
+
 class S3Settings(BaseModel):
     """S3-compatible object storage settings."""
 
@@ -77,6 +85,7 @@ class Settings(BaseSettings):
     logger: LoggerSettings
     database: DatabaseSettings
     s3: S3Settings
+    auth: AuthSettings
 
     model_config = SettingsConfigDict(
         env_file=(BASE_DIR / ".env"),

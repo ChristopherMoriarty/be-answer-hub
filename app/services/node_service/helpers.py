@@ -1,8 +1,10 @@
 import uuid
 from typing import Any
 
+from app.core.constants import ALLOWED_CONTENT_LANGUAGES
 from app.exceptions.node import (
     DuplicateNodeTitleError,
+    InvalidContentLanguageError,
     InvalidNodeMoveError,
     InvalidReorderError,
     NodeHasContentError,
@@ -19,6 +21,11 @@ def normalize_content(content_md: str | None) -> str | None:
         return None
     stripped = content_md.strip()
     return stripped or None
+
+
+def validate_content_language(language: str) -> None:
+    if language not in ALLOWED_CONTENT_LANGUAGES:
+        raise InvalidContentLanguageError(f"Unknown content language: {language}")
 
 
 def ensure_unique_reorder_ids(ordered_ids: list[uuid.UUID]) -> None:
@@ -44,7 +51,7 @@ async def ensure_parent_allows_children(
     parent_id: uuid.UUID,
 ) -> None:
     parent = await get_existing_parent(repository, parent_id)
-    if parent is not None and parent.content_md is not None:
+    if parent is not None and parent.has_content:
         raise NodeHasContentError("Parent node already stores an answer")
 
 
@@ -95,7 +102,7 @@ async def validate_reorder(
         if sibling.title in titles:
             raise DuplicateNodeTitleError("A sibling with this title already exists")
 
-    if parent is not None and parent.content_md is not None:
+    if parent is not None and parent.has_content:
         for node_id in ordered_ids:
             if node_map[node_id].parent_id != parent_id:
                 raise NodeHasContentError("Parent node already stores an answer")

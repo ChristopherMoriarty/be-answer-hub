@@ -43,7 +43,9 @@ def upgrade() -> None:
         sa.UniqueConstraint("parent_id", "title", name="uq_nodes_parent_title"),
     )
     op.create_index("ix_nodes_parent_id", "nodes", ["parent_id"], unique=False)
-    op.create_index("ix_nodes_parent_sort_order", "nodes", ["parent_id", "sort_order"], unique=False)
+    op.create_index(
+        "ix_nodes_parent_sort_order", "nodes", ["parent_id", "sort_order"], unique=False
+    )
     op.create_index(
         "uq_nodes_root_title",
         "nodes",
@@ -54,7 +56,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("uq_nodes_root_title", table_name="nodes", postgresql_where=sa.text("parent_id IS NULL"))
+    op.drop_index(
+        "uq_nodes_root_title",
+        table_name="nodes",
+        postgresql_where=sa.text("parent_id IS NULL"),
+    )
     op.drop_index("ix_nodes_parent_sort_order", table_name="nodes")
     op.drop_index("ix_nodes_parent_id", table_name="nodes")
     op.drop_table("nodes")

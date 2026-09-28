@@ -6,6 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 # Tests must never touch the dev database — conftest truncates tables after each test.
 os.environ["DATABASE__NAME"] = os.getenv("TEST_DATABASE__NAME", "answer_hub_test")
+os.environ.setdefault("AUTH__JWT_SECRET", "test-jwt-secret-not-for-production")
+os.environ.setdefault("AUTH__ACCESS_TTL_SECONDS", "900")
+os.environ.setdefault("AUTH__REFRESH_TTL_SECONDS", "604800")
 if os.getenv("DATABASE__HOST", "postgres") == "postgres" and not os.path.exists(
     "/.dockerenv"
 ):
@@ -17,9 +20,11 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.users import current_active_user
 from app.core.settings import settings
 from app.database.session import db
 from app.main import app
+from app.models.user import User
 from tests.factories import FACTORIES
 
 TEST_DATABASE_NAME = os.environ["DATABASE__NAME"]
@@ -61,9 +66,30 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     loop.close()
 
 
+def _authenticated_user() -> User:
+    """Stand-in user so existing API tests skip the login flow."""
+    return User(
+        email="test@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=True,
+        is_verified=True,
+    )
+
+
 @pytest.fixture
 async def client():
-    """HTTP client for the FastAPI application."""
+    """HTTP client with authentication bypassed."""
+    app.dependency_overrides[current_active_user] = _authenticated_user
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.pop(current_active_user, None)
+
+
+@pytest.fixture
+async def anon_client():
+    """HTTP client without an access token."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -90,6 +116,6 @@ async def clear_db(async_db_session: AsyncSession) -> AsyncGenerator[None, None]
     yield
 
     await async_db_session.execute(
-        text("TRUNCATE TABLE cv, nodes, hiring_board RESTART IDENTITY CASCADE")
+        text("TRUNCATE TABLE users, cv, nodes, hiring_board RESTART IDENTITY CASCADE")
     )
     await async_db_session.commit()

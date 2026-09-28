@@ -3,7 +3,13 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions.node import NodeHasContentError, NodeNotFoundError
+from app.exceptions.node import (
+    InvalidNodeValueError,
+    LastTranslationError,
+    NodeHasContentError,
+    NodeNotFoundError,
+    NodeTranslationNotFoundError,
+)
 from app.models.node import Node
 from app.repositories.node_repository import NodeRepository
 
@@ -17,6 +23,7 @@ from .helpers import (
     get_existing_parent,
     load_reorder_nodes,
     normalize_content,
+    validate_content_language,
     validate_reorder,
 )
 
@@ -45,6 +52,7 @@ class NodeService:
         title: str,
         parent_id: uuid.UUID | None = None,
         content_md: str | None = None,
+        language: str | None = None,
         sort_order: int | None = None,
     ) -> Node:
         """Create a section or a leaf node with markdown content."""
@@ -52,6 +60,18 @@ class NodeService:
             await ensure_parent_allows_children(self._repository, parent_id)
 
         await ensure_unique_sibling_title(self._repository, parent_id, title)
+
+        resolved_content = normalize_content(content_md)
+        if resolved_content is not None:
+            if language is None:
+                raise InvalidNodeValueError(
+                    "Language is required when creating a node with content"
+                )
+            validate_content_language(language)
+        elif language is not None:
+            raise InvalidNodeValueError(
+                "Content is required when creating a node with a language"
+            )
 
         resolved_sort_order = (
             sort_order
@@ -62,18 +82,22 @@ class NodeService:
         node = await self._repository.create(
             title=title,
             parent_id=parent_id,
-            content_md=normalize_content(content_md),
             sort_order=resolved_sort_order,
         )
+        if resolved_content is not None and language is not None:
+            await self._repository.upsert_translation(
+                node_id=node.id,
+                language=language,
+                content_md=resolved_content,
+            )
         await self._session.commit()
-        return node
+        return await self.get_node(node.id)
 
     async def update_node(
         self,
         node_id: uuid.UUID,
         *,
         title: str | Any = UNSET,
-        content_md: str | None | Any = UNSET,
         sort_order: int | Any = UNSET,
     ) -> Node:
         """Update only the fields explicitly provided by the caller."""
@@ -88,19 +112,53 @@ class NodeService:
             )
             node.title = title
 
-        if content_md is not UNSET:
-            if await self._repository.has_children(node_id):
-                raise NodeHasContentError(
-                    "Cannot store an answer on a node with children"
-                )
-            node.content_md = normalize_content(content_md)
-
         if sort_order is not UNSET:
             node.sort_order = sort_order
 
         node = await self._repository.save(node)
         await self._session.commit()
-        return node
+        return await self.get_node(node_id)
+
+    async def upsert_translation(
+        self,
+        node_id: uuid.UUID,
+        language: str,
+        *,
+        content_md: str,
+    ) -> Node:
+        """Create or update a language version of the node answer."""
+        validate_content_language(language)
+        resolved_content = normalize_content(content_md)
+        if resolved_content is None:
+            raise InvalidNodeValueError("Translation content cannot be empty")
+
+        node = await self.get_node(node_id)
+        if await self._repository.has_children(node_id):
+            raise NodeHasContentError("Cannot store an answer on a node with children")
+
+        await self._repository.upsert_translation(
+            node_id=node.id,
+            language=language,
+            content_md=resolved_content,
+        )
+        await self._session.commit()
+        return await self.get_node(node_id)
+
+    async def delete_translation(self, node_id: uuid.UUID, language: str) -> Node:
+        """Remove one language version from a leaf node."""
+        validate_content_language(language)
+        node = await self.get_node(node_id)
+        translation = await self._repository.get_translation(node_id, language)
+        if translation is None:
+            raise NodeTranslationNotFoundError(
+                f"Translation '{language}' for node {node_id} not found"
+            )
+        if len(node.translations) <= 1:
+            raise LastTranslationError("Cannot delete the last translation")
+
+        await self._repository.delete_translation(translation)
+        await self._session.commit()
+        return await self.get_node(node_id)
 
     async def move_node(
         self,
@@ -113,6 +171,8 @@ class NodeService:
         node = await self.get_node(node_id)
 
         await ensure_move_target_is_valid(self._repository, node_id, parent_id)
+        if parent_id is not None:
+            await ensure_parent_allows_children(self._repository, parent_id)
         await ensure_unique_sibling_title(
             self._repository,
             parent_id,
@@ -130,7 +190,7 @@ class NodeService:
         node.sort_order = resolved_sort_order
         node = await self._repository.save(node)
         await self._session.commit()
-        return node
+        return await self.get_node(node_id)
 
     async def reorder_nodes(
         self,

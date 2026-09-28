@@ -1,3 +1,4 @@
+from app.exceptions.auth import UnauthorizedServiceError
 from app.exceptions.base import ConflictServiceError, NotFoundServiceError, ServiceError
 from app.exceptions.node import (
     DuplicateNodeTitleError,
@@ -14,4 +15,5 @@ __all__ = [
     "NodeNotFoundError",
     "NotFoundServiceError",
     "ServiceError",
+    "UnauthorizedServiceError",
 ]

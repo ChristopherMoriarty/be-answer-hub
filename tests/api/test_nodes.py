@@ -3,8 +3,8 @@ import uuid
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.constants import API_PREFIX
-from tests.factories import NodeFactory
+from app.core.constants import API_PREFIX, CONTENT_LANGUAGE_LABELS
+from tests.factories import NodeFactory, NodeTranslationFactory
 
 NODES_URL = f"{API_PREFIX}/nodes"
 
@@ -21,13 +21,17 @@ async def _seed_tree(
     async_db_session.add(section)
     await async_db_session.flush()
 
-    leaf = NodeFactory(
-        title="Data types",
-        parent_id=section.id,
-        sort_order=0,
+    leaf = NodeFactory(title="Data types", parent_id=section.id, sort_order=0)
+    async_db_session.add(leaf)
+    await async_db_session.flush()
+
+    translation = NodeTranslationFactory(
+        node=leaf,
+        node_id=leaf.id,
+        language="ua",
         content_md="# int\n\nSigned integer type.",
     )
-    async_db_session.add(leaf)
+    async_db_session.add(translation)
     await async_db_session.commit()
 
     return root.id, section.id, leaf.id
@@ -38,7 +42,10 @@ class TestNodesTree:
         response = await client.get(f"{NODES_URL}/tree")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == {"items": []}
+        assert response.json() == {
+            "items": [],
+            "content_languages": CONTENT_LANGUAGE_LABELS,
+        }
 
     async def test_get_tree_with_nested_nodes(self, client, async_db_session):
         root_id, section_id, leaf_id = await _seed_tree(async_db_session)
@@ -46,11 +53,14 @@ class TestNodesTree:
         response = await client.get(f"{NODES_URL}/tree")
 
         assert response.status_code == status.HTTP_200_OK
-        items = response.json()["items"]
+        payload = response.json()
+        assert payload["content_languages"] == CONTENT_LANGUAGE_LABELS
+        items = payload["items"]
         assert len(items) == 1
         assert items[0]["id"] == str(root_id)
         assert items[0]["title"] == "Backend"
         assert items[0]["has_content"] is False
+        assert items[0]["languages"] == []
 
         python_node = items[0]["children"][0]
         assert python_node["id"] == str(section_id)
@@ -60,6 +70,7 @@ class TestNodesTree:
         assert leaf_node["id"] == str(leaf_id)
         assert leaf_node["title"] == "Data types"
         assert leaf_node["has_content"] is True
+        assert leaf_node["languages"] == ["ua"]
         assert leaf_node["children"] == []
 
 
@@ -73,7 +84,15 @@ class TestNodesGet:
         data = response.json()
         assert data["id"] == str(leaf_id)
         assert data["title"] == "Data types"
-        assert data["content_md"] == "# int\n\nSigned integer type."
+        assert data["languages"] == ["ua"]
+        assert data["translations"] == [
+            {
+                "language": "ua",
+                "content_md": "# int\n\nSigned integer type.",
+                "created_at": data["translations"][0]["created_at"],
+                "updated_at": data["translations"][0]["updated_at"],
+            }
+        ]
 
     async def test_get_node_not_found(self, client):
         node_id = uuid.uuid4()
@@ -91,7 +110,8 @@ class TestNodesCreate:
         data = response.json()
         assert data["title"] == "Backend"
         assert data["parent_id"] is None
-        assert data["content_md"] is None
+        assert data["translations"] == []
+        assert data["languages"] == []
         assert data["sort_order"] == 0
 
     async def test_create_leaf_with_content(self, client, async_db_session):
@@ -104,6 +124,7 @@ class TestNodesCreate:
             json={
                 "title": "Data types",
                 "parent_id": str(root.id),
+                "language": "ua",
                 "content_md": "# int",
             },
         )
@@ -111,8 +132,17 @@ class TestNodesCreate:
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
         assert data["parent_id"] == str(root.id)
-        assert data["content_md"] == "# int"
+        assert data["languages"] == ["ua"]
+        assert data["translations"][0]["content_md"] == "# int"
         assert data["sort_order"] == 0
+
+    async def test_create_leaf_requires_language(self, client):
+        response = await client.post(
+            NODES_URL,
+            json={"title": "Data types", "content_md": "# int"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     async def test_create_duplicate_sibling_title(self, client, async_db_session):
         root = NodeFactory(title="Backend")
@@ -133,8 +163,17 @@ class TestNodesCreate:
         assert second.json()["detail"] == "A sibling with this title already exists"
 
     async def test_create_child_when_parent_has_content(self, client, async_db_session):
-        leaf = NodeFactory(title="Data types", content_md="# int")
+        leaf = NodeFactory(title="Data types")
         async_db_session.add(leaf)
+        await async_db_session.flush()
+        async_db_session.add(
+            NodeTranslationFactory(
+                node=leaf,
+                node_id=leaf.id,
+                language="ua",
+                content_md="# int",
+            )
+        )
         await async_db_session.commit()
 
         response = await client.post(
@@ -152,26 +191,70 @@ class TestNodesCreate:
 
 
 class TestNodesUpdate:
-    async def test_update_title_and_content(self, client, async_db_session):
+    async def test_update_title(self, client, async_db_session):
         _, _, leaf_id = await _seed_tree(async_db_session)
 
         response = await client.patch(
             f"{NODES_URL}/{leaf_id}",
-            json={"title": "Data types updated", "content_md": "# updated"},
+            json={"title": "Data types updated"},
         )
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["title"] == "Data types updated"
-        assert data["content_md"] == "# updated"
+        assert data["languages"] == ["ua"]
+        assert data["translations"][0]["content_md"] == "# int\n\nSigned integer type."
 
-    async def test_update_content_when_node_has_children(
+
+class TestNodesTranslations:
+    async def test_upsert_adds_second_language(self, client, async_db_session):
+        _, _, leaf_id = await _seed_tree(async_db_session)
+
+        response = await client.put(
+            f"{NODES_URL}/{leaf_id}/translations/en",
+            json={"content_md": "# int\n\nSigned integer type."},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["languages"] == ["ua", "en"]
+        by_lang = {
+            item["language"]: item["content_md"] for item in data["translations"]
+        }
+        assert by_lang["ua"] == "# int\n\nSigned integer type."
+        assert by_lang["en"] == "# int\n\nSigned integer type."
+
+    async def test_upsert_updates_existing_language(self, client, async_db_session):
+        _, _, leaf_id = await _seed_tree(async_db_session)
+
+        response = await client.put(
+            f"{NODES_URL}/{leaf_id}/translations/ua",
+            json={"content_md": "# updated"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["languages"] == ["ua"]
+        assert data["translations"][0]["content_md"] == "# updated"
+
+    async def test_upsert_rejects_unknown_language(self, client, async_db_session):
+        _, _, leaf_id = await _seed_tree(async_db_session)
+
+        response = await client.put(
+            f"{NODES_URL}/{leaf_id}/translations/de",
+            json={"content_md": "# deutsch"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.json()["detail"] == "Unknown content language: de"
+
+    async def test_upsert_content_when_node_has_children(
         self, client, async_db_session
     ):
-        root_id, section_id, _ = await _seed_tree(async_db_session)
+        _, section_id, _ = await _seed_tree(async_db_session)
 
-        response = await client.patch(
-            f"{NODES_URL}/{section_id}",
+        response = await client.put(
+            f"{NODES_URL}/{section_id}/translations/en",
             json={"content_md": "# cannot add"},
         )
 
@@ -181,8 +264,26 @@ class TestNodesUpdate:
             == "Cannot store an answer on a node with children"
         )
 
-        get_response = await client.get(f"{NODES_URL}/{root_id}")
-        assert get_response.status_code == status.HTTP_200_OK
+    async def test_delete_translation(self, client, async_db_session):
+        _, _, leaf_id = await _seed_tree(async_db_session)
+        await client.put(
+            f"{NODES_URL}/{leaf_id}/translations/en",
+            json={"content_md": "# en"},
+        )
+
+        response = await client.delete(f"{NODES_URL}/{leaf_id}/translations/en")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["languages"] == ["ua"]
+
+    async def test_delete_last_translation_forbidden(self, client, async_db_session):
+        _, _, leaf_id = await _seed_tree(async_db_session)
+
+        response = await client.delete(f"{NODES_URL}/{leaf_id}/translations/ua")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Cannot delete the last translation"
 
 
 class TestNodesReorder:

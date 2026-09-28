@@ -7,6 +7,8 @@ from app.models.hiring import (
     HiringStepValue,
 )
 from app.models.node import Node
+from app.models.node_translation import NodeTranslation
+from app.models.user import User
 
 __all__ = [
     "Base",
@@ -16,4 +18,6 @@ __all__ = [
     "HiringProcess",
     "HiringStepValue",
     "Node",
+    "NodeTranslation",
+    "User",
 ]

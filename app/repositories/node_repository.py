@@ -2,9 +2,10 @@ import uuid
 
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, selectinload
 
 from app.models.node import Node
+from app.models.node_translation import NodeTranslation
 
 
 class NodeRepository:
@@ -14,13 +15,21 @@ class NodeRepository:
         self._session = session
 
     async def get_by_id(self, node_id: uuid.UUID) -> Node | None:
-        """Return a node by primary key."""
-        return await self._session.get(Node, node_id)
+        """Return a node by primary key with translations loaded."""
+        stmt = (
+            select(Node)
+            .where(Node.id == node_id)
+            .options(selectinload(Node.translations))
+            .execution_options(populate_existing=True)
+        )
+        return await self._session.scalar(stmt)
 
     async def list_all(self) -> list[Node]:
         """Return all nodes ordered for tree construction."""
-        stmt = select(Node).order_by(
-            Node.parent_id.nulls_first(), Node.sort_order, Node.title
+        stmt = (
+            select(Node)
+            .options(selectinload(Node.translations))
+            .order_by(Node.parent_id.nulls_first(), Node.sort_order, Node.title)
         )
         result = await self._session.scalars(stmt)
         return list(result.all())
@@ -30,7 +39,11 @@ class NodeRepository:
         if not node_ids:
             return []
 
-        stmt = select(Node).where(Node.id.in_(node_ids))
+        stmt = (
+            select(Node)
+            .where(Node.id.in_(node_ids))
+            .options(selectinload(Node.translations))
+        )
         result = await self._session.scalars(stmt)
         return list(result.all())
 
@@ -41,7 +54,12 @@ class NodeRepository:
             if parent_id is None
             else Node.parent_id == parent_id
         )
-        stmt = select(Node).where(parent_filter).order_by(Node.sort_order, Node.title)
+        stmt = (
+            select(Node)
+            .where(parent_filter)
+            .options(selectinload(Node.translations))
+            .order_by(Node.sort_order, Node.title)
+        )
         result = await self._session.scalars(stmt)
         return list(result.all())
 
@@ -67,6 +85,11 @@ class NodeRepository:
     async def has_children(self, node_id: uuid.UUID) -> bool:
         """Return True if the node has at least one child."""
         stmt = select(exists().where(Node.parent_id == node_id))
+        return bool(await self._session.scalar(stmt))
+
+    async def has_translations(self, node_id: uuid.UUID) -> bool:
+        """Return True if the node has at least one translation."""
+        stmt = select(exists().where(NodeTranslation.node_id == node_id))
         return bool(await self._session.scalar(stmt))
 
     async def is_self_or_descendant(
@@ -105,26 +128,63 @@ class NodeRepository:
         *,
         title: str,
         parent_id: uuid.UUID | None = None,
-        content_md: str | None = None,
         sort_order: int = 0,
     ) -> Node:
         """Persist a new node."""
         node = Node(
             title=title,
             parent_id=parent_id,
-            content_md=content_md,
             sort_order=sort_order,
         )
         self._session.add(node)
         await self._session.flush()
-        await self._session.refresh(node)
         return node
+
+    async def upsert_translation(
+        self,
+        *,
+        node_id: uuid.UUID,
+        language: str,
+        content_md: str,
+    ) -> NodeTranslation:
+        """Create or update a translation for a node language."""
+        stmt = select(NodeTranslation).where(
+            NodeTranslation.node_id == node_id,
+            NodeTranslation.language == language,
+        )
+        translation = await self._session.scalar(stmt)
+        if translation is None:
+            translation = NodeTranslation(
+                node_id=node_id,
+                language=language,
+                content_md=content_md,
+            )
+            self._session.add(translation)
+        else:
+            translation.content_md = content_md
+            self._session.add(translation)
+
+        await self._session.flush()
+        await self._session.refresh(translation)
+        return translation
+
+    async def get_translation(
+        self, node_id: uuid.UUID, language: str
+    ) -> NodeTranslation | None:
+        stmt = select(NodeTranslation).where(
+            NodeTranslation.node_id == node_id,
+            NodeTranslation.language == language,
+        )
+        return await self._session.scalar(stmt)
+
+    async def delete_translation(self, translation: NodeTranslation) -> None:
+        await self._session.delete(translation)
+        await self._session.flush()
 
     async def save(self, node: Node) -> Node:
         """Flush pending changes for an existing node."""
         self._session.add(node)
         await self._session.flush()
-        await self._session.refresh(node)
         return node
 
     async def delete(self, node: Node) -> None:

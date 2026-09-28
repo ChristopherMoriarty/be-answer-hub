@@ -107,10 +107,16 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(["column_id"], ["hiring_board_column.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["process_id"], ["hiring_process.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["column_id"], ["hiring_board_column.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["process_id"], ["hiring_process.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("process_id", "column_id", name="uq_hiring_step_value_process_column"),
+        sa.UniqueConstraint(
+            "process_id", "column_id", name="uq_hiring_step_value_process_column"
+        ),
     )
 
 

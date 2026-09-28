@@ -10,9 +10,11 @@ from app.models.base import Base
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from app.models.node_translation import NodeTranslation
+
 
 class Node(Base):
-    """Hierarchical topic node. Leaf nodes store markdown answers."""
+    """Hierarchical topic node. Leaf nodes store markdown answers per language."""
 
     __tablename__ = "nodes"
     __table_args__ = (
@@ -26,7 +28,6 @@ class Node(Base):
         nullable=True,
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
-    content_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
@@ -42,3 +43,20 @@ class Node(Base):
         order_by="Node.sort_order",
         passive_deletes=True,
     )
+    translations: Mapped[list["NodeTranslation"]] = relationship(
+        "NodeTranslation",
+        back_populates="node",
+        cascade="all, delete-orphan",
+        order_by="NodeTranslation.created_at",
+        passive_deletes=True,
+    )
+
+    @property
+    def has_content(self) -> bool:
+        return bool(self.translations)
+
+    def translation_for(self, language: str) -> "NodeTranslation | None":
+        for translation in self.translations:
+            if translation.language == language:
+                return translation
+        return None
