@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${DATABASE__PASSWORD:-postgres}
       POSTGRES_DB: ${DATABASE__NAME:-answer_hub}
     volumes:
-      - ./.data/postgres:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./scripts/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
     networks:
       - be-answer-hub-network
@@ -57,7 +57,7 @@ services:
       RUSTFS_ACCESS_KEY: ${S3__ACCESS_KEY:-minioadmin}
       RUSTFS_SECRET_KEY: ${S3__SECRET_KEY:-minioadmin}
     volumes:
-      - ./.data/rustfs:/data
+      - rustfs_data:/data
     networks:
       - be-answer-hub-network
     healthcheck:
@@ -81,7 +81,7 @@ services:
       - ./app:/app/app
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O /dev/null http://localhost:8000/health || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -98,3 +98,9 @@ services:
 networks:
   be-answer-hub-network:
     driver: bridge
+
+volumes:
+  postgres_data:
+    name: answer_hub_postgres
+  rustfs_data:
+    name: answer_hub_rustfs

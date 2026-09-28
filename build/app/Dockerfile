@@ -1,22 +1,25 @@
-FROM python:3.11.7-slim
+FROM python:3.11.7-slim AS builder
+
+ENV PIP_NO_CACHE_DIR=1 \
+    POETRY_VIRTUALENVS_IN_PROJECT=1 \
+    POETRY_NO_INTERACTION=1
 
 WORKDIR /app
 
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+RUN pip install --no-cache-dir "poetry==2.1.3"
 
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libpq-dev \
-    build-essential \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml poetry.lock ./
 
-COPY pyproject.toml poetry.lock* /app/
+RUN poetry install --only main --no-root --no-ansi
 
-RUN pip install poetry && \
-    poetry config virtualenvs.create false && \
-    poetry install --no-root && \
-    poetry cache clear pypi --all
+FROM python:3.11.7-slim
 
-COPY . /app
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/.venv/bin:$PATH"
+
+WORKDIR /app
+
+COPY --from=builder /app/.venv /app/.venv
+COPY app ./app
+COPY scripts ./scripts
