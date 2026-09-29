@@ -1,0 +1,102 @@
+name: answer-hub
+
+services:
+  postgres:
+    container_name: answer-hub-postgres
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: ${DATABASE__USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE__PASSWORD:-postgres}
+      POSTGRES_DB: ${DATABASE__NAME:-answer_hub}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - answer-hub
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE__USER:-postgres} -d ${DATABASE__NAME:-answer_hub}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rustfs:
+    container_name: answer-hub-rustfs
+    image: rustfs/rustfs:1.0.0
+    user: "0:0"
+    restart: always
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: ${S3__ACCESS_KEY:-minioadmin}
+      RUSTFS_SECRET_KEY: ${S3__SECRET_KEY:-minioadmin}
+    volumes:
+      - rustfs_data:/data
+    networks:
+      - answer-hub
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  migrations:
+    image: ghcr.io/christophermoriarty/be-answer-hub:${APP_TAG:-latest}
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      MIGRATE_TEST_DATABASE: "0"
+    working_dir: /app/app/database/migrations
+    command: ["sh", "/app/scripts/run-migrations.sh"]
+    networks:
+      - answer-hub
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    container_name: answer-hub-app
+    image: ghcr.io/christophermoriarty/be-answer-hub:${APP_TAG:-latest}
+    restart: always
+    env_file:
+      - .env
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - answer-hub
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+
+  frontend:
+    container_name: answer-hub-frontend
+    image: ghcr.io/christophermoriarty/fe-answer-hub:${FRONTEND_TAG:-latest}
+    restart: always
+    ports:
+      - "10.8.0.1:80:80"
+    networks:
+      - answer-hub
+    depends_on:
+      app:
+        condition: service_healthy
+
+networks:
+  answer-hub:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: answer_hub_postgres
+  rustfs_data:
+    name: answer_hub_rustfs
