@@ -3,7 +3,10 @@ import uuid
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.users import current_active_user
 from app.core.constants import API_PREFIX, CONTENT_LANGUAGE_LABELS
+from app.main import app
+from app.models.user import User
 from tests.factories import NodeFactory, NodeTranslationFactory
 
 NODES_URL = f"{API_PREFIX}/nodes"
@@ -412,3 +415,42 @@ class TestNodesDelete:
         response = await client.delete(f"{NODES_URL}/{uuid.uuid4()}")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestNodeOwnership:
+    async def test_other_user_does_not_see_nodes(
+        self,
+        client,
+        async_db_session: AsyncSession,
+    ):
+        created = await client.post(NODES_URL, json={"title": "Backend"})
+        assert created.status_code == status.HTTP_201_CREATED
+        node_id = created.json()["id"]
+
+        other_id = uuid.uuid4()
+        async_db_session.add(
+            User(
+                id=other_id,
+                email="other@example.com",
+                hashed_password="not-used",
+                is_active=True,
+                is_superuser=False,
+                is_verified=True,
+            )
+        )
+        await async_db_session.commit()
+        app.dependency_overrides[current_active_user] = lambda: User(
+            id=other_id,
+            email="other@example.com",
+            hashed_password="not-used",
+            is_active=True,
+            is_superuser=False,
+            is_verified=True,
+        )
+
+        tree = await client.get(f"{NODES_URL}/tree")
+        assert tree.status_code == status.HTTP_200_OK
+        assert tree.json()["items"] == []
+
+        missing = await client.get(f"{NODES_URL}/{node_id}")
+        assert missing.status_code == status.HTTP_404_NOT_FOUND

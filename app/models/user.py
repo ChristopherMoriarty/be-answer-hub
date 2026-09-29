@@ -2,9 +2,20 @@ import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.cv import Cv
+    from app.models.hiring import (
+        HiringBoard,
+        HiringBoardColumn,
+        HiringProcess,
+        HiringStepValue,
+    )
+    from app.models.node import Node
+    from app.models.node_translation import NodeTranslation
 
 
 class User(Base):
@@ -31,3 +42,19 @@ class User(Base):
         is_verified: Mapped[bool] = mapped_column(
             Boolean, nullable=False, default=False, server_default="false"
         )
+
+    nodes: Mapped[list["Node"]] = relationship(back_populates="user")
+    node_translations: Mapped[list["NodeTranslation"]] = relationship(
+        back_populates="user"
+    )
+    cvs: Mapped[list["Cv"]] = relationship(back_populates="user")
+    hiring_boards: Mapped[list["HiringBoard"]] = relationship(back_populates="user")
+    hiring_columns: Mapped[list["HiringBoardColumn"]] = relationship(
+        back_populates="user"
+    )
+    hiring_processes: Mapped[list["HiringProcess"]] = relationship(
+        back_populates="user"
+    )
+    hiring_step_values: Mapped[list["HiringStepValue"]] = relationship(
+        back_populates="user"
+    )

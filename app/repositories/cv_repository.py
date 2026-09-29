@@ -9,22 +9,30 @@ from app.models.cv import Cv
 class CvRepository:
     """Data access layer for stored CV PDFs."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, user_id: uuid.UUID) -> None:
         self._session = session
+        self._user_id = user_id
 
     async def get_by_id(self, cv_id: uuid.UUID) -> Cv | None:
         """Return a CV record by primary key."""
-        return await self._session.get(Cv, cv_id)
+        stmt = select(Cv).where(Cv.id == cv_id, Cv.user_id == self._user_id)
+        return await self._session.scalar(stmt)
 
     async def list_all(self) -> list[Cv]:
         """Return all CV records, newest first."""
-        stmt = select(Cv).order_by(Cv.created_at.desc())
+        stmt = (
+            select(Cv).where(Cv.user_id == self._user_id).order_by(Cv.created_at.desc())
+        )
         result = await self._session.scalars(stmt)
         return list(result.all())
 
     async def unset_all_current(self) -> None:
-        """Clear the current flag from all CV records."""
-        stmt = update(Cv).where(Cv.is_current.is_(True)).values(is_current=False)
+        """Clear the current flag from this user's CV records."""
+        stmt = (
+            update(Cv)
+            .where(Cv.user_id == self._user_id, Cv.is_current.is_(True))
+            .values(is_current=False)
+        )
         await self._session.execute(stmt)
 
     async def create(
@@ -42,6 +50,7 @@ class CvRepository:
         """Persist a new CV record."""
         cv = Cv(
             id=cv_id,
+            user_id=self._user_id,
             title=title,
             original_filename=original_filename,
             storage_key=storage_key,

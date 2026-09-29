@@ -1,7 +1,14 @@
-from sqlalchemy import Boolean, Index, Integer, Text, text
-from sqlalchemy.orm import Mapped, mapped_column
+import uuid
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, Text, text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class Cv(Base):
@@ -10,13 +17,20 @@ class Cv(Base):
     __tablename__ = "cv"
     __table_args__ = (
         Index(
-            "uq_cv_single_current",
-            "is_current",
+            "uq_cv_single_current_per_user",
+            "user_id",
             unique=True,
             postgresql_where=text("is_current = true"),
         ),
     )
 
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user: Mapped["User"] = relationship(back_populates="cvs")
     title: Mapped[str] = mapped_column(Text, nullable=False)
     original_filename: Mapped[str] = mapped_column(Text, nullable=False)
     storage_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)

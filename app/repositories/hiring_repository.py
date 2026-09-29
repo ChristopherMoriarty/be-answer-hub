@@ -16,12 +16,15 @@ from app.models.hiring import (
 class HiringRepository:
     """Data access for hiring boards and processes."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, user_id: uuid.UUID) -> None:
         self._session = session
+        self._user_id = user_id
 
     async def list_boards(self) -> list[HiringBoard]:
-        stmt = select(HiringBoard).order_by(
-            HiringBoard.sort_order, HiringBoard.created_at
+        stmt = (
+            select(HiringBoard)
+            .where(HiringBoard.user_id == self._user_id)
+            .order_by(HiringBoard.sort_order, HiringBoard.created_at)
         )
         result = await self._session.scalars(stmt)
         return list(result.all())
@@ -29,7 +32,7 @@ class HiringRepository:
     async def get_board_by_id(self, board_id: uuid.UUID) -> HiringBoard | None:
         stmt = (
             select(HiringBoard)
-            .where(HiringBoard.id == board_id)
+            .where(HiringBoard.id == board_id, HiringBoard.user_id == self._user_id)
             .options(
                 selectinload(HiringBoard.columns),
                 selectinload(HiringBoard.processes).selectinload(
@@ -41,12 +44,18 @@ class HiringRepository:
         return await self._session.scalar(stmt)
 
     async def get_next_board_sort_order(self) -> int:
-        stmt = select(func.coalesce(func.max(HiringBoard.sort_order), -1))
+        stmt = select(func.coalesce(func.max(HiringBoard.sort_order), -1)).where(
+            HiringBoard.user_id == self._user_id
+        )
         max_order = await self._session.scalar(stmt)
         return (-1 if max_order is None else int(max_order)) + 1
 
     async def create_board(self, *, title: str, sort_order: int) -> HiringBoard:
-        board = HiringBoard(title=title, sort_order=sort_order)
+        board = HiringBoard(
+            user_id=self._user_id,
+            title=title,
+            sort_order=sort_order,
+        )
         self._session.add(board)
         await self._session.flush()
         await self._session.refresh(board)
@@ -63,11 +72,16 @@ class HiringRepository:
         await self._session.flush()
 
     async def get_column_by_id(self, column_id: uuid.UUID) -> HiringBoardColumn | None:
-        return await self._session.get(HiringBoardColumn, column_id)
+        stmt = select(HiringBoardColumn).where(
+            HiringBoardColumn.id == column_id,
+            HiringBoardColumn.user_id == self._user_id,
+        )
+        return await self._session.scalar(stmt)
 
     async def get_next_column_sort_order(self, board_id: uuid.UUID) -> int:
         stmt = select(func.coalesce(func.max(HiringBoardColumn.sort_order), -1)).where(
-            HiringBoardColumn.board_id == board_id
+            HiringBoardColumn.board_id == board_id,
+            HiringBoardColumn.user_id == self._user_id,
         )
         max_order = await self._session.scalar(stmt)
         return (-1 if max_order is None else int(max_order)) + 1
@@ -81,6 +95,7 @@ class HiringRepository:
         sort_order: int,
     ) -> HiringBoardColumn:
         column = HiringBoardColumn(
+            user_id=self._user_id,
             board_id=board_id,
             step_kind=step_kind,
             custom_title=custom_title,
@@ -104,6 +119,7 @@ class HiringRepository:
                 .where(
                     HiringBoardColumn.id == column_id,
                     HiringBoardColumn.board_id == board_id,
+                    HiringBoardColumn.user_id == self._user_id,
                 )
                 .values(sort_order=index)
             )
@@ -112,14 +128,18 @@ class HiringRepository:
     async def get_process_by_id(self, process_id: uuid.UUID) -> HiringProcess | None:
         stmt = (
             select(HiringProcess)
-            .where(HiringProcess.id == process_id)
+            .where(
+                HiringProcess.id == process_id,
+                HiringProcess.user_id == self._user_id,
+            )
             .options(selectinload(HiringProcess.step_values))
         )
         return await self._session.scalar(stmt)
 
     async def get_next_process_sort_order(self, board_id: uuid.UUID) -> int:
         stmt = select(func.coalesce(func.max(HiringProcess.sort_order), -1)).where(
-            HiringProcess.board_id == board_id
+            HiringProcess.board_id == board_id,
+            HiringProcess.user_id == self._user_id,
         )
         max_order = await self._session.scalar(stmt)
         return (-1 if max_order is None else int(max_order)) + 1
@@ -136,6 +156,7 @@ class HiringRepository:
         sort_order: int,
     ) -> HiringProcess:
         process = HiringProcess(
+            user_id=self._user_id,
             board_id=board_id,
             company=company,
             source=source,
@@ -168,6 +189,7 @@ class HiringRepository:
         stmt = select(HiringStepValue).where(
             HiringStepValue.process_id == process_id,
             HiringStepValue.column_id == column_id,
+            HiringStepValue.user_id == self._user_id,
         )
         return await self._session.scalar(stmt)
 
@@ -182,6 +204,7 @@ class HiringRepository:
         existing = await self.get_step_value(process_id=process_id, column_id=column_id)
         if existing is None:
             value = HiringStepValue(
+                user_id=self._user_id,
                 process_id=process_id,
                 column_id=column_id,
                 status=status,
@@ -197,5 +220,8 @@ class HiringRepository:
         return value
 
     async def clear_step_values_for_column(self, column_id: uuid.UUID) -> None:
-        stmt = delete(HiringStepValue).where(HiringStepValue.column_id == column_id)
+        stmt = delete(HiringStepValue).where(
+            HiringStepValue.column_id == column_id,
+            HiringStepValue.user_id == self._user_id,
+        )
         await self._session.execute(stmt)

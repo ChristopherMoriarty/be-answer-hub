@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uuid
 from collections.abc import AsyncGenerator, Generator
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -25,7 +26,7 @@ from app.core.settings import settings
 from app.database.session import db
 from app.main import app
 from app.models.user import User
-from tests.factories import FACTORIES
+from tests.factories import FACTORIES, set_owner_id
 
 TEST_DATABASE_NAME = os.environ["DATABASE__NAME"]
 
@@ -66,10 +67,11 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     loop.close()
 
 
-def _authenticated_user() -> User:
-    """Stand-in user so existing API tests skip the login flow."""
+def _detached_user(user_id: uuid.UUID, email: str) -> User:
+    """A user object safe to read outside the database session."""
     return User(
-        email="test@example.com",
+        id=user_id,
+        email=email,
         hashed_password="not-used",
         is_active=True,
         is_superuser=True,
@@ -77,10 +79,30 @@ def _authenticated_user() -> User:
     )
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def owner(async_db_session: AsyncSession) -> AsyncGenerator[User, None]:
+    """Persist the user that API tests and factories share."""
+    user_id = uuid.uuid4()
+    async_db_session.add(
+        User(
+            id=user_id,
+            email="test@example.com",
+            hashed_password="not-used",
+            is_active=True,
+            is_superuser=True,
+            is_verified=True,
+        )
+    )
+    await async_db_session.commit()
+    set_owner_id(user_id)
+    yield _detached_user(user_id, "test@example.com")
+    set_owner_id(None)
+
+
 @pytest.fixture
-async def client():
-    """HTTP client with authentication bypassed."""
-    app.dependency_overrides[current_active_user] = _authenticated_user
+async def client(owner: User):
+    """HTTP client signed in as the shared test user."""
+    app.dependency_overrides[current_active_user] = lambda: owner
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

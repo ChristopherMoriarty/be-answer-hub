@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from app.models.node_translation import NodeTranslation
+    from app.models.user import User
 
 
 class Node(Base):
@@ -22,6 +23,13 @@ class Node(Base):
         Index("ix_nodes_parent_sort_order", "parent_id", "sort_order"),
     )
 
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user: Mapped["User"] = relationship(back_populates="nodes")
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("nodes.id", ondelete="CASCADE"),

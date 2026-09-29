@@ -11,14 +11,15 @@ from app.models.node_translation import NodeTranslation
 class NodeRepository:
     """Data access layer for hierarchical topic nodes."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, user_id: uuid.UUID) -> None:
         self._session = session
+        self._user_id = user_id
 
     async def get_by_id(self, node_id: uuid.UUID) -> Node | None:
         """Return a node by primary key with translations loaded."""
         stmt = (
             select(Node)
-            .where(Node.id == node_id)
+            .where(Node.id == node_id, Node.user_id == self._user_id)
             .options(selectinload(Node.translations))
             .execution_options(populate_existing=True)
         )
@@ -28,6 +29,7 @@ class NodeRepository:
         """Return all nodes ordered for tree construction."""
         stmt = (
             select(Node)
+            .where(Node.user_id == self._user_id)
             .options(selectinload(Node.translations))
             .order_by(Node.parent_id.nulls_first(), Node.sort_order, Node.title)
         )
@@ -41,7 +43,7 @@ class NodeRepository:
 
         stmt = (
             select(Node)
-            .where(Node.id.in_(node_ids))
+            .where(Node.id.in_(node_ids), Node.user_id == self._user_id)
             .options(selectinload(Node.translations))
         )
         result = await self._session.scalars(stmt)
@@ -56,7 +58,7 @@ class NodeRepository:
         )
         stmt = (
             select(Node)
-            .where(parent_filter)
+            .where(parent_filter, Node.user_id == self._user_id)
             .options(selectinload(Node.translations))
             .order_by(Node.sort_order, Node.title)
         )
@@ -72,6 +74,7 @@ class NodeRepository:
     ) -> Node | None:
         """Return a sibling node with the same title, if it exists."""
         stmt = select(Node).where(
+            Node.user_id == self._user_id,
             Node.parent_id.is_(None)
             if parent_id is None
             else Node.parent_id == parent_id,
@@ -84,12 +87,22 @@ class NodeRepository:
 
     async def has_children(self, node_id: uuid.UUID) -> bool:
         """Return True if the node has at least one child."""
-        stmt = select(exists().where(Node.parent_id == node_id))
+        stmt = select(
+            exists().where(
+                Node.parent_id == node_id,
+                Node.user_id == self._user_id,
+            )
+        )
         return bool(await self._session.scalar(stmt))
 
     async def has_translations(self, node_id: uuid.UUID) -> bool:
         """Return True if the node has at least one translation."""
-        stmt = select(exists().where(NodeTranslation.node_id == node_id))
+        stmt = select(
+            exists().where(
+                NodeTranslation.node_id == node_id,
+                NodeTranslation.user_id == self._user_id,
+            )
+        )
         return bool(await self._session.scalar(stmt))
 
     async def is_self_or_descendant(
@@ -101,12 +114,15 @@ class NodeRepository:
 
         tree = (
             select(Node.id.label("id"))
-            .where(Node.id == ancestor_id)
+            .where(Node.id == ancestor_id, Node.user_id == self._user_id)
             .cte(name="tree", recursive=True)
         )
         tree_alias = aliased(tree)
         tree = tree.union_all(
-            select(Node.id).where(Node.parent_id == tree_alias.c.id),
+            select(Node.id).where(
+                Node.parent_id == tree_alias.c.id,
+                Node.user_id == self._user_id,
+            ),
         )
 
         stmt = select(exists().select_from(tree).where(tree.c.id == node_id))
@@ -119,7 +135,10 @@ class NodeRepository:
             if parent_id is None
             else Node.parent_id == parent_id
         )
-        stmt = select(func.coalesce(func.max(Node.sort_order), -1)).where(parent_filter)
+        stmt = select(func.coalesce(func.max(Node.sort_order), -1)).where(
+            parent_filter,
+            Node.user_id == self._user_id,
+        )
         result = await self._session.scalar(stmt)
         return -1 if result is None else int(result)
 
@@ -132,6 +151,7 @@ class NodeRepository:
     ) -> Node:
         """Persist a new node."""
         node = Node(
+            user_id=self._user_id,
             title=title,
             parent_id=parent_id,
             sort_order=sort_order,
@@ -151,10 +171,12 @@ class NodeRepository:
         stmt = select(NodeTranslation).where(
             NodeTranslation.node_id == node_id,
             NodeTranslation.language == language,
+            NodeTranslation.user_id == self._user_id,
         )
         translation = await self._session.scalar(stmt)
         if translation is None:
             translation = NodeTranslation(
+                user_id=self._user_id,
                 node_id=node_id,
                 language=language,
                 content_md=content_md,
@@ -174,6 +196,7 @@ class NodeRepository:
         stmt = select(NodeTranslation).where(
             NodeTranslation.node_id == node_id,
             NodeTranslation.language == language,
+            NodeTranslation.user_id == self._user_id,
         )
         return await self._session.scalar(stmt)
 

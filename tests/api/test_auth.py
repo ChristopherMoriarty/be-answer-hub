@@ -90,7 +90,7 @@ async def test_access_token_opens_protected_route(anon_client, account):
         headers={"Authorization": f"Bearer {tokens['access_token']}"},
     )
     assert response.status_code == 200
-    assert response.json() == {"items": []}
+    assert response.json()["items"] == []
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 import uuid
 from datetime import date
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Date, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
@@ -7,12 +8,22 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
+if TYPE_CHECKING:
+    from app.models.user import User
+
 
 class HiringBoard(Base):
     """A role-specific hiring tracker table, e.g. Python applications."""
 
     __tablename__ = "hiring_board"
 
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user: Mapped["User"] = relationship(back_populates="hiring_boards")
     title: Mapped[str] = mapped_column(Text, nullable=False)
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
@@ -35,6 +46,13 @@ class HiringBoardColumn(Base):
 
     __tablename__ = "hiring_board_column"
 
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user: Mapped["User"] = relationship(back_populates="hiring_columns")
     board_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("hiring_board.id", ondelete="CASCADE"),
@@ -58,6 +76,13 @@ class HiringProcess(Base):
 
     __tablename__ = "hiring_process"
 
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user: Mapped["User"] = relationship(back_populates="hiring_processes")
     board_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("hiring_board.id", ondelete="CASCADE"),
@@ -96,6 +121,13 @@ class HiringStepValue(Base):
         ),
     )
 
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user: Mapped["User"] = relationship(back_populates="hiring_step_values")
     process_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("hiring_process.id", ondelete="CASCADE"),
